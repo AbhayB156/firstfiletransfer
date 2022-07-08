@@ -1,0 +1,86 @@
+using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using System.Web.Http;
+
+/// <summary>
+/// This web api provides methods for accepting a POST that contains a base64-encoded file chunk
+/// </summary>
+public class FileIncomingController : ApiController
+{
+    // #########
+    // constants
+    // #########
+    readonly string LOCAL_DIR = @"[path to files]";
+
+    [HttpPost, ActionName("PostFile")]
+    [Route("")]
+    public async Task<string> PostFile(string guid, int note_number, int note_index)
+    {
+        // ################################################################################
+        // step 1: read binary data from the POST, convert it to base64, save to local file
+        // ################################################################################
+
+        try
+        {
+            byte[] form_data = await Request.Content.ReadAsByteArrayAsync();
+            string encoded_form_data = Convert.ToBase64String(form_data);
+            File.WriteAllText(LOCAL_DIR + @"\" + note_index + " -" + guid + ".txt", encoded_form_data, Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            return JsonConvert.SerializeObject("{\"err\":\"" + ex.ToString() + "\"}");
+        }
+
+
+        // ###########################################################################################
+        // step 2: after a file is written, check filesystem to see if we have all the chunks expected
+        // ###########################################################################################
+
+        try
+        {
+            DirectoryInfo d = new DirectoryInfo(LOCAL_DIR);
+            FileInfo[] Files = d.GetFiles("*.txt");
+            int file_count = 0;
+
+            foreach (FileInfo file in Files)
+            {
+                if (file.Name.Contains(guid))
+                    file_count++;
+            }
+
+            if (file_count >= note_number)
+            {
+                // ########################################################
+                // step 3: if all chunks accounted for, reassemble the file
+                // ########################################################
+
+                StringBuilder sb = new StringBuilder();
+
+                for (int i = 1; i <= note_number; i++)
+                {
+                    string content = File.ReadAllText(LOCAL_DIR + @"\" + i + " -" + guid + ".txt", Encoding.UTF8);
+                    sb.Append(content);
+                }
+
+                byte[] file_data = Convert.FromBase64String(sb.ToString());
+                File.WriteAllBytes(LOCAL_DIR + @"\" + guid + ".txt", file_data);
+            }
+
+        }
+        catch (Exception ex)
+        {
+            return JsonConvert.SerializeObject("{\"err\":\"" + ex.ToString() + "\"}");
+        }
+
+        return JsonConvert.SerializeObject(200);
+    }
+
+    [HttpGet, ActionName("GetTest")]
+    public string GetTest()
+    {
+        return "Hello World!";
+    }
+}
